@@ -202,7 +202,7 @@ Datathon-backend/
 ---
 
 ## 👥 Team & Credits
-Developed by **Team Datathon**  
+Developed by **Team SSD - TAMU Datathon 2025**  
 Built for the **Hitachi Digital Services Datathon Challenge**  
 
 ---
