@@ -1,81 +1,202 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Job Dashboard</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 2rem; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    th { background: #f4f4f4; }
-    .rerun { background: #ffc107; border: none; padding: 4px 8px; cursor: pointer; border-radius: 4px; }
-    .rerun:hover { background: #ffb300; }
-  </style>
-</head>
-<body>
-  <h1>Jobs Dashboard</h1>
-  <button onclick="refresh()">🔄 Refresh</button>
-  <table id="jobs">
-    <thead>
-      <tr><th>ID</th><th>File</th><th>Status</th><th>Created</th><th>Actions</th></tr>
-    </thead>
-    <tbody>
-      {% for j in jobs %}
-      <tr>
-        <td>{{ j.id }}</td>
-        <td>{{ j.original_file }}</td>
-        <td>{{ j.status }}</td>
-        <td>{{ j.created_at }}</td>
-        <td class="api">
-          <a href="/api/jobs/{{ j.id }}" target="_blank">status</a>
-          {% if j.status in ['SUCCESS', 'FAILED'] %}
-            • <button class="rerun" data-id="{{ j.id }}">↻ Rerun</button>
-          {% endif %}
-          {% if j.status == 'SUCCESS' %}
-            • <a href="/api/jobs/{{ j.id }}/result" target="_blank">JSON</a>
-            {% if j.result and j.result.classified_pdf %}
-              • <a href="/results/{{ j.result.classified_pdf }}" target="_blank">View PDF</a>
-            {% endif %}
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <script>
-    async function refresh() {
-      const res = await fetch('/api/jobs');
-      const jobs = await res.json();
-      const tbody = document.querySelector('#jobs tbody');
-      tbody.innerHTML = jobs.map(j => `
-        <tr>
-          <td>${j.id}</td>
-          <td>${j.original_file}</td>
-          <td>${j.status}</td>
-          <td>${j.created_at}</td>
-          <td class="api">
-            <a href="/api/jobs/${j.id}" target="_blank">status</a>
-            ${(j.status==='SUCCESS' || j.status==='FAILED') ? ` • <button class="rerun" data-id="${j.id}">↻ Rerun</button>` : ''}
-            ${j.status==='SUCCESS' ? ` • <a href="/api/jobs/${j.id}/result" target="_blank">JSON</a>${j.result?.classified_pdf ? ` • <a href="/results/${j.result.classified_pdf}" target="_blank">View PDF</a>` : ''}` : ''}
-          </td>
-        </tr>`).join('');
-    }
-
-    async function rerunJob(id) {
-      if (!confirm(`Re-run job ${id}?`)) return;
-      const res = await fetch(`/api/jobs/${id}/rerun`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) alert(data.error || 'Failed to rerun');
-      else { alert(`Rerun started! New job ID: ${data.new_job_id}`); refresh(); }
-    }
-
-    document.addEventListener('click', e => {
-      if (e.target.classList.contains('rerun')) {
-        e.preventDefault();
-        rerunJob(e.target.dataset.id);
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Task Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+      :root{
+        --bg:#0b1220; --surface:#0f172a; --stroke:#1f2937; --text:#e6edf3; --muted:#9aa4b2; --brand:#3b82f6;
+        --chip:#0b1220; --chip-stroke:#203049;
       }
-    });
-  </script>
-</body>
+      *{box-sizing:border-box}
+      body{margin:0;background:linear-gradient(180deg,#0a0f1e 0%,#0b1220 100%);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+      .wrap{max-width:1400px;margin:3rem auto;padding:2rem;background:radial-gradient(1200px 500px at 0% 0%,rgba(59,130,246,.08),transparent 60%),var(--surface);border:1px solid var(--stroke);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+      h1{margin:0 0 .25rem;font-size:1.9rem}
+      .sub{color:var(--muted);font-size:.95rem;margin-bottom:1rem}
+      .controls{display:flex;gap:.5rem;flex-wrap:wrap}
+      .input, select{background:#0b1220;border:1px solid var(--stroke);color:var(--text);padding:.6rem .8rem;border-radius:.7rem;min-width:12rem}
+      .btn{background:var(--brand);color:#fff;border:0;border-radius:.7rem;padding:.6rem .9rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;text-align:center}
+      .btn.secondary{background:#0b1220;border:1px solid var(--stroke)}
+      table{width:100%;border-collapse:separate;border-spacing:0;margin-top:.75rem;table-layout:auto}
+      thead th{position:sticky;top:0;background:linear-gradient(#0f172a,#0e162b);border-bottom:1px solid var(--stroke);padding:.7rem .6rem;text-align:left;font-weight:600;white-space:nowrap}
+      tbody td{border-bottom:1px solid var(--stroke);padding:.7rem .6rem;vertical-align:middle}
+      td.cat{white-space:normal;}
+      tr:hover td{background:#0c152b}
+      .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+      .idcell{display:flex;align-items:center;gap:.4rem;min-width:0}
+      .idtext{min-width:0;overflow:hidden;text-overflow:ellipsis}
+      .copy{border:1px solid var(--stroke);background:#0b1220;color:var(--text);padding:.2rem .4rem;border-radius:.4rem;cursor:pointer;flex:0 0 auto}
+      .status{display:inline-flex;align-items:center;gap:.35rem;padding:.22rem .5rem;border-radius:999px;font-weight:700;font-size:.82rem;border:1px solid var(--chip-stroke);background:var(--chip)}
+      .SUCCESS{background:rgba(16,185,129,.15);color:#34d399;border-color:rgba(16,185,129,.35)}
+      .RUNNING{background:rgba(245,158,11,.15);color:#fbbf24;border-color:rgba(245,158,11,.35)}
+      .FAILED{background:rgba(239,68,68,.15);color:#f87171;border-color:rgba(239,68,68,.35)}
+      .chips{display:flex;gap:.35rem;flex-wrap:wrap;max-width:100%;}
+      .chip{background:#0b1220;border:1px solid var(--chip-stroke);border-radius:999px;padding:.16rem .45rem;font-size:.76rem;color:#cbd5e1;white-space:nowrap}
+      .api{display:flex;gap:.35rem;align-items:center;justify-content:flex-end}
+      .api .action{background:#0b1220;border:1px solid var(--stroke);color:var(--text);padding:.35rem .55rem;border-radius:.5rem;white-space:nowrap;text-decoration:none}
+      .pager{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:1rem 0}
+      .pager a{background:#0b1220;border:1px solid var(--stroke);color:var(--text);padding:.45rem .7rem;border-radius:.6rem;text-decoration:none}
+      .pager .active{background:var(--brand);border-color:var(--brand);color:#fff}
+      .empty{border:1px dashed var(--stroke);border-radius:1rem;padding:2rem;text-align:center;color:var(--muted);margin-top:1rem}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+        <div>
+          <h1>Task Dashboard</h1>
+          <div class="sub">Showing <span id="total">0 jobs</span> • <span id="pagesLabel">Page 1/1</span></div>
+        </div>
+        <div class="controls">
+          <button id="autoToggle" class="btn secondary">Auto: ON</button>
+          <button class="btn" onclick="fetchJobs()">Manual Refresh</button>
+          <a href="/" class="btn">Upload New File</a>
+        </div>
+      </div>
+
+      <div class="controls" style="margin:.5rem 0 1rem">
+        <input id="search" class="input" placeholder="Search jobs or filenames" />
+        <select id="status">
+          <option value="ALL">All statuses</option>
+          <option value="PENDING">Pending</option>
+          <option value="RUNNING">Running</option>
+          <option value="SUCCESS">Success</option>
+          <option value="FAILED">Failed</option>
+        </select>
+        <select id="perPage">
+          <option value="5">5 / page</option>
+          <option value="10" selected>10 / page</option>
+          <option value="20">20 / page</option>
+        </select>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Job ID</th>
+            <th>File name</th>
+            <th>Status</th>
+            <th>Categories</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+
+      <div id="empty" class="empty" style="display:none">
+        No jobs yet. <a href="/">Upload a new file</a>.
+      </div>
+      <div id="pager" class="pager"></div>
+    </div>
+
+    <script>
+      window.INITIAL_JOBS = {{ jobs|tojson|safe }};
+      const state = { jobs: [], page: 1, perPage: 10, q: '', status: 'ALL', auto: true };
+      function setAutoRefresh(on){ state.auto = on; const btn=document.getElementById('autoToggle'); btn.textContent=on?'Auto: ON':'Auto: OFF'; btn.classList.toggle('secondary',!on); }
+      const badge = s => `<span class="status ${s}">${s}</span>`;
+      const copy = t => navigator.clipboard.writeText(t);
+
+      function categoriesChips(j){
+        const cats=j?.result?.categories||[];
+        if(!cats.length)return '—';
+        return `<div class="chips">${cats.map(c=>`<span class="chip">${c}</span>`).join('')}</div>`;
+      }
+
+      // ✅ Only keep status, View PDF (for SUCCESS), and Rerun
+      function actionsCell(j){
+        const bits=[`<a class="action" href="/api/jobs/${j.id}" target="_blank">status</a>`];
+        if(j.status==='SUCCESS' && j.result?.classified_pdf){
+          bits.push(`<a class="action" href="/results/${j.result.classified_pdf}" target="_blank">View PDF</a>`);
+        }
+        if(j.status==='SUCCESS'||j.status==='FAILED'){
+          bits.push(`<button class="action rerun" data-id="${j.id}">↻ Rerun</button>`);
+        }
+        return bits.join('');
+      }
+
+      function applyFilters(arr){ let a=[...arr];
+        if(state.q){ const q=state.q.toLowerCase(); a=a.filter(j=>(j.id+" "+(j.original_file||"")).toLowerCase().includes(q)); }
+        if(state.status!=='ALL'){ a=a.filter(j=>j.status===state.status); }
+        return a;
+      }
+
+      function paginate(arr){
+        const total=arr.length; const pages=Math.max(1,Math.ceil(total/state.perPage));
+        if(state.page>pages)state.page=pages;
+        const start=(state.page-1)*state.perPage;
+        return {items:arr.slice(start,start+state.perPage),total,pages};
+      }
+
+      function render(){
+        const filtered=applyFilters(state.jobs);
+        const {items,total,pages}=paginate(filtered);
+        document.getElementById('total').textContent=`${total} job${total!==1?'s':''}`;
+        const tb=document.getElementById('rows'); tb.innerHTML='';
+        if(items.length===0){
+          document.getElementById('empty').style.display='block';
+        } else {
+          document.getElementById('empty').style.display='none';
+          for(const j of items){
+            const tr=document.createElement('tr');
+            tr.innerHTML=`
+              <td class="mono"><div class="idcell"><span class="idtext">${j.id}</span><button class="copy" onclick="copy('${j.id}')">Copy</button></div></td>
+              <td title="${j.original_file||''}">${j.original_file||'—'}</td>
+              <td>${badge(j.status)}</td>
+              <td class="cat">${categoriesChips(j)}</td>
+              <td class="api">${actionsCell(j)}</td>`;
+            tb.appendChild(tr);
+          }
+        }
+
+        // pagination
+        const pager=document.getElementById('pager'); pager.innerHTML='';
+        const make=(label,page,disabled,active)=>{
+          const a=document.createElement('a'); a.href='#'; a.textContent=label;
+          if(active)a.classList.add('active');
+          if(disabled){ a.style.opacity=.5;a.style.pointerEvents='none'; }
+          a.onclick=e=>{e.preventDefault();if(!disabled){state.page=page;render();}};
+          return a;
+        };
+        const prevp=Math.max(1,state.page-1),nextp=Math.min(pages,state.page+1);
+        pager.appendChild(make('‹ Prev',prevp,state.page===1,false));
+        for(let p=1;p<=pages;p++){
+          if(p<=2||p>pages-2||Math.abs(p-state.page)<=1){
+            pager.appendChild(make(String(p),p,false,p===state.page));
+          }
+        }
+        pager.appendChild(make('Next ›',nextp,state.page===pages,false));
+        document.getElementById('pagesLabel').textContent=`Page ${state.page}/${pages}`;
+      }
+
+      async function fetchJobs(){ const res=await fetch('/api/jobs'); state.jobs=await res.json(); render(); }
+      function schedule(){ if(state.auto){ setTimeout(()=>{ fetchJobs().then(schedule).catch(()=>{}); },2000); } }
+
+      document.addEventListener('DOMContentLoaded',()=>{
+        state.jobs=Array.isArray(window.INITIAL_JOBS)?window.INITIAL_JOBS:[];
+        render();
+        fetchJobs().then(schedule).catch(()=>{});
+        document.getElementById('search').addEventListener('input',e=>{state.q=e.target.value;state.page=1;render();});
+        document.getElementById('status').addEventListener('change',e=>{state.status=e.target.value;state.page=1;render();});
+        document.getElementById('perPage').addEventListener('change',e=>{state.perPage=parseInt(e.target.value,10);state.page=1;render();});
+        document.getElementById('autoToggle').addEventListener('click',()=>setAutoRefresh(!state.auto));
+        document.addEventListener('click',e=>{
+          if(e.target.classList.contains('rerun')){
+            const id=e.target.dataset.id;
+            if(confirm(`Re-run job ${id}?`)){
+              fetch(`/api/jobs/${id}/rerun`,{method:'POST'})
+                .then(r=>r.json())
+                .then(d=>{
+                  if(d.new_job_id){ alert(`Rerun started: ${d.new_job_id}`); fetchJobs(); }
+                  else { alert(d.error||'Failed'); }
+                })
+                .catch(()=>alert('Network error'));
+            }
+          }
+        });
+      });
+    </script>
+  </body>
 </html>

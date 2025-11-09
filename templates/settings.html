@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prompt Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root{ --bg:#0b1220; --surface:#0f172a; --stroke:#1f2937; --text:#e6edf3; --muted:#9aa4b2; --brand:#3b82f6; --ok:#10b981; --err:#ef4444;}
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#0a0f1e,#0b1220);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+    .wrap{max-width:950px;margin:3rem auto;padding:2rem;background:var(--surface);border:1px solid var(--stroke);border-radius:18px}
+    h1{margin:0 0 .25rem} .sub{color:var(--muted);margin:0 0 1rem}
+    .row{display:grid;grid-template-columns:1fr;gap:1rem;margin:1rem 0}
+    .card{border:1px solid var(--stroke);border-radius:14px;padding:1rem;background:#0d1428}
+    .card h2{margin:.25rem 0 .5rem;font-size:1.05rem}
+    .item{display:flex;gap:.5rem;margin:.4rem 0;align-items:center}
+    .item input{flex:1;background:#0b1220;border:1px solid var(--stroke);border-radius:.6rem;padding:.55rem .7rem;color:var(--text)}
+    .btn{background:var(--brand);color:#fff;border:0;border-radius:.6rem;padding:.55rem .8rem;font-weight:600;cursor:pointer;text-decoration:none}
+    .btn.secondary{background:#0b1220;border:1px solid var(--stroke)}
+    .btn.danger{background:var(--err)}
+    .btn.ok{background:var(--ok)}
+    .bar{display:flex;gap:.5rem;justify-content:space-between;align-items:center;margin-top:1.5rem;flex-wrap:wrap}
+    .chips{display:flex;gap:.35rem;flex-wrap:wrap;color:var(--muted);font-size:.9rem}
+    .muted{color:var(--muted)}
+    .link{color:#8fb3ff;text-decoration:none}
+    .hint{font-size:.9rem;color:var(--muted);margin-top:.25rem}
+    .add-btn{margin-top:.5rem}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap">
+      <div>
+        <h1>Prompt Settings</h1>
+        <p class="sub">Modify your model’s behavior by editing these lists below.</p>
+      </div>
+      <div class="chips">
+        <a class="btn secondary" href="/">← Back to Upload</a>
+        <a class="btn secondary" href="/jobs">View Jobs</a>
+      </div>
+    </div>
+
+    <div class="row">
+      <!-- Categories -->
+      <div class="card" id="card-categories">
+        <h2>Categories</h2>
+        <div id="list-categories"></div>
+        <button class="btn secondary add-btn" onclick="addItem('categories')">+ Add category</button>
+        <div class="hint">These are the possible classification labels.</div>
+      </div>
+
+      <!-- Contextual Logic -->
+      <div class="card" id="card-contextual_logic">
+        <h2>Contextual Logic</h2>
+        <div id="list-contextual_logic"></div>
+        <button class="btn secondary add-btn" onclick="addItem('contextual_logic')">+ Add logic rule</button>
+        <div class="hint">Controls how image/text relationships are interpreted.</div>
+      </div>
+
+      <!-- Rules -->
+      <div class="card" id="card-rules">
+        <h2>Rules</h2>
+        <div id="list-rules"></div>
+        <button class="btn secondary add-btn" onclick="addItem('rules')">+ Add rule</button>
+        <div class="hint">Defines strict JSON formatting and inclusion rules.</div>
+      </div>
+    </div>
+
+    <div class="bar">
+      <div class="chips muted" id="status">Loaded.</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn secondary" onclick="resetToDefaults()">Reset to defaults</button>
+        <button class="btn ok" onclick="save()">💾 Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Initial settings + defaults from Flask
+    const INITIAL = {{ settings|tojson|safe }};
+    const DEFAULTS = {{ defaults|tojson|safe }};
+    const state = JSON.parse(JSON.stringify(INITIAL || DEFAULTS));
+
+    function el(tag, attrs={}, html=''){ const e=document.createElement(tag); for(const k in attrs){ e.setAttribute(k, attrs[k]); } e.innerHTML=html; return e; }
+
+    function renderList(key){
+      const host = document.getElementById('list-'+key);
+      host.innerHTML = '';
+      (state[key]||[]).forEach((val, idx) => {
+        const row = el('div', {class:'item'});
+        const input = el('input', {
+          type:'text',
+          value:val,
+          placeholder:`Enter ${key.slice(0,-1)}...`
+        });
+        input.oninput = () => { state[key][idx] = input.value; touch(); };
+        const del = el('button', {class:'btn danger'}, '✕');
+        del.onclick = () => { state[key].splice(idx,1); renderList(key); touch(); };
+        row.append(input, del);
+        host.append(row);
+      });
+      if(!(state[key] && state[key].length)) {
+        host.append(el('div', {class:'muted'}, 'No items yet.'));
+      }
+    }
+
+    function addItem(key){
+      state[key] = state[key] || [];
+      state[key].push('');
+      renderList(key);
+      touch('Unsaved changes');
+      // Focus on new input
+      const inputs = document.querySelectorAll(`#list-${key} input`);
+      if(inputs.length) inputs[inputs.length - 1].focus();
+    }
+
+    function touch(msg='Unsaved changes'){ document.getElementById('status').textContent = msg; }
+
+    async function save(){
+      try{
+        const res = await fetch('/api/settings', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            categories: state.categories||[],
+            rules: state.rules||[],
+            contextual_logic: state.contextual_logic||[]
+          })
+        });
+        const data = await res.json().catch(()=>({}));
+        if(res.ok){ touch('✅ Saved successfully'); }
+        else{ touch('❌ Save failed: ' + (data.error||res.statusText)); }
+      }catch(e){ touch('❌ Save failed: network error'); }
+    }
+
+    function resetToDefaults(){
+      state.categories = [...DEFAULTS.categories];
+      state.rules = [...DEFAULTS.rules];
+      state.contextual_logic = [...DEFAULTS.contextual_logic];
+      renderAll();
+      touch('Defaults restored (not saved yet)');
+    }
+
+    function renderAll(){
+      renderList('categories');
+      renderList('contextual_logic');
+      renderList('rules');
+    }
+
+    document.addEventListener('DOMContentLoaded', renderAll);
+  </script>
+</body>
+</html>

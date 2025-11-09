@@ -8,6 +8,7 @@ from threading import Lock
 from datetime import datetime
 from PyPDF2 import PdfReader
 import os, io, traceback
+import json
 
 # <-- NEW: import your classifier class
 from Inference import ContextualPDFClassifier
@@ -16,7 +17,7 @@ load_dotenv()
 
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx"}
 TEN_MB = 10 * 1024 * 1024
-MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "2"))
+MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "4"))
 PORT = int(os.environ.get("PORT", "5050"))
 
 app = Flask(__name__, instance_relative_config=True)
@@ -29,6 +30,10 @@ Path(app.config["UPLOAD_FOLDER"]).mkdir(parents=True, exist_ok=True)
 # <-- NEW: results folder for annotated PDFs / JSON
 RESULTS_FOLDER = os.path.join(app.instance_path, "results")
 Path(RESULTS_FOLDER).mkdir(parents=True, exist_ok=True)
+SETTINGS_PATH = Path(app.instance_path) / "prompt_settings.json"
+SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+DEFAULTS = ContextualPDFClassifier.DEFAULT_PROMPT_LIBRARY
+
 
 _jobs = {}
 _lock = Lock()
@@ -224,6 +229,64 @@ def api_rerun_job(job_id):
     _executor.submit(_preprocess_pdf, new_id, src_path)
     return jsonify({"message": "Rerun started", "new_job_id": new_id})
 
+def load_settings():
+    if SETTINGS_PATH.exists():
+        try:
+            with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # ensure keys exist
+            return {
+                "categories": data.get("categories", DEFAULTS["categories"]),
+                "rules": data.get("rules", DEFAULTS["rules"]),
+                "contextual_logic": data.get("contextual_logic", DEFAULTS["contextual_logic"]),
+            }
+        except Exception:
+            pass
+    return {k: list(v) for k, v in DEFAULTS.items()}
+
+def save_settings(d):
+    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump({
+            "categories": d.get("categories", []),
+            "rules": d.get("rules", []),
+            "contextual_logic": d.get("contextual_logic", []),
+        }, f, indent=2, ensure_ascii=False)
+
+# --- page to edit settings ---
+@app.get("/settings")
+def settings_page():
+    return render_template(
+        "settings.html",
+        settings=load_settings(),
+        defaults=DEFAULTS,
+    )
+
+# --- read current settings (optional) ---
+@app.get("/api/settings")
+def api_get_settings():
+    return jsonify(load_settings())
+
+# --- save settings ---
+@app.post("/api/settings")
+def api_save_settings():
+    try:
+        data = request.get_json(force=True) or {}
+        # coerce to lists of strings
+        def cleanse(x):
+            if not isinstance(x, list): return []
+            return [str(i).strip() for i in x if str(i).strip()]
+        clean = {
+            "categories": cleanse(data.get("categories")),
+            "rules": cleanse(data.get("rules")),
+            "contextual_logic": cleanse(data.get("contextual_logic")),
+        }
+        # basic guards
+        if not clean["categories"]:
+            return jsonify({"error": "categories cannot be empty"}), 400
+        save_settings(clean)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":
     app.run(debug=True, port=PORT)

@@ -1,6 +1,7 @@
 import os
 import io
 import json
+from typing import Dict, List
 
 import fitz
 from PIL import Image
@@ -19,55 +20,83 @@ class ContextualPDFClassifier:
         "Unsafe Language and Content"
     ]
 
-    PAGE_SYSTEM_PROMPT = """
-You are classifying ALL entities on a single PDF page.
+#     PAGE_SYSTEM_PROMPT = """
+# You are classifying ALL entities on a single PDF page.
 
-Each page contains:
-- text blocks (with id, bbox, text)
-- images (with id, bbox, caption)
+# Each page contains:
+# - text blocks (with id, bbox, text)
+# - images (with id, bbox, caption)
 
-You MUST examine BOTH text blocks AND images.
-Do NOT ignore any image. Do NOT skip image entities.
+# You MUST examine BOTH text blocks AND images.
+# Do NOT ignore any image. Do NOT skip image entities.
 
-You MUST classify every entity into one or more of ONLY these categories:
-- Sensitive PII Data
-- Confidential Company Info
-- Safe for Public Use
-- Unsafe Language and Content
+# You MUST classify every entity into one or more of ONLY these categories:
+# - Sensitive PII Data
+# - Confidential Company Info
+# - Safe for Public Use
+# - Unsafe Language and Content
 
-CONTEXTUAL CLASSIFICATION RULES:
-- Treat images as likely company property. Do NOT classify as unsafe based solely on generic image content.
-- Images should inherit context from surrounding text. For example, technical details in text may render associated images confidential.
-- If nearby text indicates confidentiality, the associated image inherits CONFIDENTIALITY.
-- An image with harmless content may still be UNSAFE or CONFIDENTIAL depending on text.
-- You MUST classify ALL images, even if the caption is short or general.
-- For each image, decide whether it belongs to any NON-SAFE category.
+# CONTEXTUAL CLASSIFICATION RULES:
+# - Treat images as likely company property. Do NOT classify as unsafe based solely on generic image content.
+# - Images should inherit context from surrounding text. For example, technical details in text may render associated images confidential.
+# - If nearby text indicates confidentiality, the associated image inherits CONFIDENTIALITY.
+# - An image with harmless content may still be UNSAFE or CONFIDENTIAL depending on text.
+# - You MUST classify ALL images, even if the caption is short or general.
+# - For each image, decide whether it belongs to any NON-SAFE category.
 
-OUTPUT REQUIREMENTS (STRICT JSON ONLY):
+# OUTPUT REQUIREMENTS (STRICT JSON ONLY):
 
-{
-  "page_index": int,
-  "issues": [
-    {
-      "entity_id": "<id of text block or image>",
-      "entity_type": "text" or "image",
-      "bbox": [x0, y0, x1, y1],
-      "caption": "<caption text for images, empty string for text>",
-      "categories": ["..."],
-      "rationale": "2–4 sentences explaining classification.",
-      "quotes": ["verbatim substrings for text blocks, empty list for images"]
+# {
+#   "page_index": int,
+#   "issues": [
+#     {
+#       "entity_id": "<id of text block or image>",
+#       "entity_type": "text" or "image",
+#       "bbox": [x0, y0, x1, y1],
+#       "caption": "<caption text for images, empty string for text>",
+#       "categories": ["..."],
+#       "rationale": "2–4 sentences explaining classification.",
+#       "quotes": ["verbatim substrings for text blocks, empty list for images"]
+#     }
+#   ]
+# }
+
+# RULES:
+# - Include ONLY entities whose categories DO NOT include "Safe for Public Use".
+# - For text, ⁠ quotes ⁠ MUST contain exact verbatim substrings.
+# - For images, ⁠ quotes ⁠ MUST be an empty list.
+# - ⁠ caption ⁠ must be EXACTLY the provided caption for images; empty for text.
+# - Do NOT omit image entities. If an image is safe, omit it entirely from ⁠ issues ⁠. If NOT safe, include it.
+# - STRICT JSON ONLY. NO commentary, no markdown.
+# """
+    # ============================================================
+# DYNAMIC PROMPT LIBRARY
+# ============================================================
+
+    DEFAULT_PROMPT_LIBRARY = {
+        "categories": [
+            "Sensitive PII Data",
+            "Confidential Company Info",
+            "Safe for Public Use",
+            "Unsafe Language and Content"
+        ],
+        "contextual_logic": [
+            "Treat images as likely company property. Do NOT classify as unsafe based solely on generic image content.",
+            "Images should inherit context from surrounding text. For example, technical details in text may render associated images confidential.",
+            "If nearby text indicates confidentiality, the associated image inherits CONFIDENTIALITY.",
+            "An image with harmless content may still be UNSAFE or CONFIDENTIAL depending on text.",
+            "You MUST classify ALL images, even if the caption is short or general.",
+            "For each image, decide whether it belongs to any NON-SAFE category."
+        ],
+        "rules": [
+            "Include ONLY entities whose categories DO NOT include 'Safe for Public Use'.",
+            "For text, ⁠ quotes ⁠ MUST contain exact verbatim substrings.",
+            "For images, ⁠ quotes ⁠ MUST be an empty list.",
+            "⁠ caption ⁠ must be EXACTLY the provided caption for images; empty for text.",
+            "Do NOT omit image entities. If an image is safe, omit it entirely from ⁠ issues ⁠. If NOT safe, include it.",
+            "STRICT JSON ONLY. NO commentary, no markdown."
+        ]
     }
-  ]
-}
-
-RULES:
-- Include ONLY entities whose categories DO NOT include "Safe for Public Use".
-- For text, `quotes` MUST contain exact verbatim substrings.
-- For images, `quotes` MUST be an empty list.
-- `caption` must be EXACTLY the provided caption for images; empty for text.
-- Do NOT omit image entities. If an image is safe, omit it entirely from `issues`. If NOT safe, include it.
-- STRICT JSON ONLY. NO commentary, no markdown.
-"""
 
     def __init__(self, openrouter_api_key: str | None = None, model: str | None = None):
         # API key
@@ -106,6 +135,57 @@ RULES:
         resp = requests.post(self.OPENROUTER_URL, headers=headers, json=payload)
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]
+
+    def build_dynamic_prompt(self, prompt_overrides: Dict[str, List[str]] = None) -> str:
+        """
+        Builds a dynamic prompt by merging user-provided overrides with defaults.
+        Overrides should be dict with keys: categories, rules, contextual_logic
+        """
+        lib = ContextualPDFClassifier.DEFAULT_PROMPT_LIBRARY.copy()
+
+        if prompt_overrides:
+            for key in ["categories", "rules", "contextual_logic"]:
+                if key in prompt_overrides and isinstance(prompt_overrides[key], list):
+                    lib[key] = prompt_overrides[key]
+
+        # Build final system prompt dynamically
+        dynamic_prompt = f"""
+                You are classifying ALL entities on a single PDF page.
+
+                Each page contains:
+                - text blocks (with id, bbox, text)
+                - may contain images (with id, bbox, caption)
+
+                You MUST examine BOTH text blocks AND images if any.
+                Do NOT ignore any image if any. Do NOT skip image entities if any.
+
+                You MUST classify every entity into one or more of ONLY these categories:
+                {chr(10).join(f"- {c}" for c in lib['categories'])}
+
+                CONTEXTUAL CLASSIFICATION RULES FOR IMAGES IF ANY:
+                {chr(10).join(f"- {l}" for l in lib['contextual_logic'])}
+
+                OUTPUT REQUIREMENTS (STRICT JSON ONLY):
+
+                {{
+                "page_index": int,
+                "issues": [
+                    {{
+                    "entity_id": "<id of text block or image>",
+                    "entity_type": "text" or "image",
+                    "bbox": [x0, y0, x1, y1],
+                    "caption": "<caption text for images, empty string for text>",
+                    "categories": ["..."],
+                    "rationale": "2–4 sentences explaining classification.",
+                    "quotes": ["verbatim substrings for text blocks, empty list for images"]
+                    }}
+                ]
+                }}
+
+                RULES:
+                {chr(10).join(f"- {r}" for r in lib['rules'])}
+                """
+        return dynamic_prompt.strip()
 
     # ============================================================
     # STEP 1 — Extract text blocks
@@ -182,10 +262,12 @@ RULES:
     # ============================================================
     # STEP 3 — Contextual page classifier
     # ============================================================
-    def classify_page_contextually(self, page_text, images):
+    def classify_page_contextually(self, page_text, images, prompt_overrides=None):
         pno = page_text["page_index"]
 
-        # only images on this page
+        # Build dynamic prompt (use overrides if given)
+        system_prompt = self.build_dynamic_prompt(prompt_overrides)
+
         imgs = [
             {"id": img["id"], "bbox": img["bbox"], "caption": img["caption"]}
             for img in images if img["page_index"] == pno
@@ -198,11 +280,11 @@ RULES:
         }
 
         raw = self.call_openrouter([
-            {"role": "system", "content": self.PAGE_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}
         ]).strip()
 
-        # isolate json
+        # same as before
         first, last = raw.find("{"), raw.rfind("}")
         if first != -1 and last != -1:
             raw = raw[first:last+1]
@@ -212,12 +294,11 @@ RULES:
         except:
             parsed = {"page_index": pno, "issues": []}
 
-        # filter safe categories
         clean = []
         for issue in parsed.get("issues", []):
             issue["categories"] = [
                 c for c in issue.get("categories", [])
-                if c in self.CATEGORIES and c != "Safe for Public Use"
+                if c in ContextualPDFClassifier.DEFAULT_PROMPT_LIBRARY["categories"] and c != "Safe for Public Use"
             ]
             if issue["categories"]:
                 clean.append(issue)
@@ -294,8 +375,9 @@ RULES:
     def classify_pdf_contextually(
         self,
         pdf_path: str,
-        output_json="contextual_classification.json",
-        output_pdf="contextual_highlights.pdf"
+        output_json,
+        output_pdf,
+        prompt_overrides=None,
     ):
         # Extract components
         text_pages = self.extract_text_blocks(pdf_path)
@@ -304,7 +386,7 @@ RULES:
         # Page-by-page classification
         page_results = []
         for p in text_pages:
-            page_results.append(self.classify_page_contextually(p, images))
+            page_results.append(self.classify_page_contextually(p, images,prompt_overrides=prompt_overrides))
 
         # extract image-level issues
         image_results = self.extract_image_results(page_results)

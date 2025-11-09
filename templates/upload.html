@@ -3,31 +3,45 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Upload PDFs / Docs</title>
+    <title>Upload PDFs</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
       :root { --bg:#0b1220; --panel:#111827; --text:#e6edf3; --muted:#9ca3af; --stroke:#1f2937; --brand:#2563eb; }
       *{box-sizing:border-box}
       body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
-      .wrap{max-width:720px;margin:6rem auto;padding:2rem;background:var(--panel);border-radius:1.25rem;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+      .wrap{max-width:720px;margin:6rem auto;padding:2rem;background:var(--panel);border-radius:1.25rem;box-shadow:0 20px 50px rgba(0,0,0,.35);border:1px solid var(--stroke)}
       h1{margin:0 0 .5rem;font-size:2rem}
       p.lead{margin:.25rem 0 1.25rem;color:var(--muted)}
+      .topbar{display:flex;justify-content:flex-end;gap:.5rem;flex-wrap:wrap;margin:-.5rem 0 1rem}
+      .btn{background:var(--brand);color:#fff;border:0;border-radius:.8rem;padding:.7rem .95rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;transition:all .2s}
+      .btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
+      .btn.secondary{background:#0b1220;border:1px solid var(--stroke);color:#cbd5e1}
+      .btn.secondary:hover{border-color:#2b3c57}
+      .btn.glow{background:linear-gradient(90deg,#2563eb,#3b82f6);box-shadow:0 0 12px rgba(59,130,246,.45)}
+      .btn.glow:hover{box-shadow:0 0 18px rgba(59,130,246,.75)}
       form{display:grid;gap:1rem}
-      .file{padding:1rem;border:1px dashed var(--stroke);border-radius:.9rem;background:#0b1220}
-      .actions{display:flex;gap:.75rem;align-items:center}
+      .file{padding:1rem;border:1px dashed var(--stroke);border-radius:.9rem;background:#0b1220;width:100%}
+      .actions{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
       button{appearance:none;border:0;border-radius:.8rem;padding:.9rem 1.1rem;background:var(--brand);color:#fff;font-weight:600;cursor:pointer}
       button:hover{filter:brightness(1.1)}
       a{color:#7aa2ff;text-decoration:none}
       .flash{background:#0d162a;border:1px solid var(--stroke);padding:.8rem 1rem;border-radius:.8rem}
-      footer{margin-top:1rem;color:var(--muted)}
       .tips{font-size:.9rem;color:var(--muted)}
     </style>
   </head>
   <body>
     <div class="wrap">
-      <h1>Upload PDFs / Word docs</h1>
-      <p class="lead">Select one or more files. Allowed: <strong>.pdf, .doc, .docx</strong>. Total size must be <strong>≤ 10&nbsp;MB × file count</strong>. DOC/DOCX will be converted to PDF automatically.</p>
+      <div class="topbar">
+        <a href="{{ url_for('jobs_page') }}" class="btn secondary">🗂 Task Dashboard</a>
+        <a href="/settings" class="btn glow">⚙️ Prompt Settings</a>
+      </div>
+
+      <h1>Upload PDFs</h1>
+      <p class="lead">
+        Select one or more <strong>.pdf</strong> files.
+        Total size must be <strong>≤ 10&nbsp;MB × file count</strong>.
+      </p>
 
       {% with messages = get_flashed_messages() %}
         {% if messages %}
@@ -40,14 +54,19 @@
       {% endwith %}
 
       <form action="{{ url_for('upload_many') }}" method="post" enctype="multipart/form-data">
-        <input class="file" type="file" name="files" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple required />
+        <input
+          class="file"
+          type="file"
+          name="files"
+          accept=".pdf,application/pdf"
+          multiple
+          required
+        />
         <div class="actions">
           <button type="submit">Create Jobs</button>
-          <span class="tips">Check progress in the <a href="{{ url_for('jobs_page') }}">Task Dashboard</a>.</span>
+          <span class="tips">Track progress in the <a href="{{ url_for('jobs_page') }}">Task Dashboard</a>.</span>
         </div>
       </form>
-
-      <footer>Storage folder: <code>instance/uploads</code></footer>
     </div>
   </body>
 </html>
