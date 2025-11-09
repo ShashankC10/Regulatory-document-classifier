@@ -1,4 +1,4 @@
-# 🧠 HitachiDS_Datathon_Challenges_Package — Multi-Modal AI Document Classification System
+# 🧠 Hitachi AI-Powered Regulatory Document Classifier — Multi-Modal AI Document Classification System
 
 ## 📄 Overview
 **Compliance Checker** is an AI-powered multi-modal document auditing system that automatically classifies business documents (PDFs, images, memos, etc.) into compliance categories.  
