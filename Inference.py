@@ -228,6 +228,17 @@ RULES:
     # ============================================================
     # STEP 4 — Extract image-only results
     # ============================================================
+    def extract_image_results(self, page_results):
+        out = []
+        for page in page_results:
+            for issue in page["issues"]:
+                if issue["entity_type"] == "image":
+                    out.append(issue)
+        return out
+
+    # ============================================================
+    # STEP 5 — Highlight text + image regions
+    # ============================================================
     def highlight_pdf(self, pdf_path, page_results, output_pdf):
         doc = fitz.open(pdf_path)
 
