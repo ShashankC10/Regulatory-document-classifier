@@ -1,7 +1,7 @@
 # -------------------------------
 # Python / Flask backend
 # -------------------------------
-__pycache__/
+__pycache__
 *.py[cod]
 *$py.class
 
@@ -11,6 +11,7 @@ venv/
 env/
 ENV/
 .env
+.idea
 
 # Instance and runtime files
 instance/
